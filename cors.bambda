@@ -1,0 +1,21 @@
+var res = requestResponse.response();
+if (res == null) return "";
+
+String allowCreds = res.headerValue("Access-Control-Allow-Credentials");
+if (allowCreds == null || !"true".equalsIgnoreCase(allowCreds.trim())) return "";
+
+String allowOrigin = res.headerValue("Access-Control-Allow-Origin");
+if (allowOrigin == null) return "";
+
+
+if ("*".equals(allowOrigin.trim())) {
+    return "Wildcard CORS";
+}
+
+var req = (requestResponse.finalRequest() != null) ? requestResponse.finalRequest() : requestResponse.request();
+String reqOrigin = (req != null) ? req.headerValue("Origin") : null;
+if (reqOrigin != null && allowOrigin.trim().equals(reqOrigin.trim())) {
+    return "Dynamic CORS";
+}
+
+return "";
