@@ -1,0 +1,29 @@
+var req = (requestResponse.finalRequest() != null)
+    ? requestResponse.finalRequest()
+    : requestResponse.request();
+if (req == null) {
+    return "";
+}
+
+java.util.List<burp.api.montoya.http.message.params.ParsedHttpParameter> urlParams =
+    req.parameters(burp.api.montoya.http.message.params.HttpParameterType.URL);
+java.util.List<burp.api.montoya.http.message.params.ParsedHttpParameter> bodyParams =
+    req.parameters(burp.api.montoya.http.message.params.HttpParameterType.BODY);
+
+if (urlParams == null) urlParams = java.util.Collections.emptyList();
+if (bodyParams == null) bodyParams = java.util.Collections.emptyList();
+
+if (urlParams.isEmpty() && bodyParams.isEmpty()) {
+    return "";
+}
+
+java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+for (burp.api.montoya.http.message.params.ParsedHttpParameter p : urlParams) {
+    names.add(p.name());
+}
+for (burp.api.montoya.http.message.params.ParsedHttpParameter p : bodyParams) {
+    names.add(p.name());
+}
+
+String out = String.join(", ", names);
+return out;
