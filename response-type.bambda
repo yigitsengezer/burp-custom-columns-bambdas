@@ -1,13 +1,1 @@
-
-var res = requestResponse.response();
-if (res == null) {
-    return "";
-}
-
-var header = res.headerValue("Content-Type");
-
-if (header == null) {
-    return "";
-}
-
-return header;
+return requestResponse.hasResponse() && requestResponse.response().hasHeader("Content-Type") ? requestResponse.response().headerValue("Content-Type") : "";
