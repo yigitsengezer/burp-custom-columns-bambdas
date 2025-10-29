@@ -1,69 +1,18 @@
-// Reflected parameter detection with URL-decoded matching (Bambda-compatible)
-
-// Request ve response kontrolü
-if (requestResponse == null || requestResponse.request() == null || requestResponse.response() == null) {
+var requestParams = requestResponse.request().parameters();
+if (!requestResponse.hasResponse()) {
     return "";
 }
 
-var req = (requestResponse.finalRequest() != null)
-    ? requestResponse.finalRequest()
-    : requestResponse.request();
-var res = requestResponse.response();
-if (res == null) {
-    return "";
-}
+var responseBody = requestResponse.response().bodyToString();
+var reflected = new StringBuilder();
 
-// Response body
-String body = res.bodyToString();
-if (body == null || body.isEmpty()) {
-    return "";
-}
+for (var param : requestParams) {
+    var value = param.value();
+    var decodedValue = utilities().urlUtils().decode(value);
 
-// Parametreleri al (URL + BODY)
-java.util.List<burp.api.montoya.http.message.params.ParsedHttpParameter> urlParams =
-    req.parameters(burp.api.montoya.http.message.params.HttpParameterType.URL);
-java.util.List<burp.api.montoya.http.message.params.ParsedHttpParameter> bodyParams =
-    req.parameters(burp.api.montoya.http.message.params.HttpParameterType.BODY);
-
-// Null güvenliği
-if ((urlParams == null || urlParams.isEmpty()) && (bodyParams == null || bodyParams.isEmpty())) {
-    return "";
-}
-
-java.util.LinkedHashSet<String> reflectedNames = new java.util.LinkedHashSet<>();
-
-java.util.function.Function<String, String> safeDecode = v -> {
-    try {
-        return java.net.URLDecoder.decode(v, java.nio.charset.StandardCharsets.UTF_8.name());
-    } catch (Exception e) {
-        return v;
-    }
-};
-
-java.util.function.BiConsumer<String,String> checkValue = (name, value) -> {
-    if (value == null || value.isEmpty()) return;
-    String decoded = safeDecode.apply(value);
-    // Hem orijinal hem decode edilmiş haline bak
-    if (body.contains(value) || body.contains(decoded)) {
-        reflectedNames.add(name);
-    }
-};
-
-if (urlParams != null) {
-    for (burp.api.montoya.http.message.params.ParsedHttpParameter p : urlParams) {
-        checkValue.accept(p.name(), p.value());
+    if (responseBody.contains(value) || responseBody.contains(decodedValue)) {
+        reflected.append(param.name()).append(", ");
     }
 }
 
-if (bodyParams != null) {
-    for (burp.api.montoya.http.message.params.ParsedHttpParameter p : bodyParams) {
-        checkValue.accept(p.name(), p.value());
-    }
-}
-
-if (reflectedNames.isEmpty()) {
-    return "";
-}
-
-String result = String.join(", ", reflectedNames);
-return result;
+return reflected.length() > 0 ? reflected.substring(0, reflected.length() - 2) : "";
