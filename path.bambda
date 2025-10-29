@@ -1,14 +1,3 @@
-var req = (requestResponse.finalRequest() != null)
-    ? requestResponse.finalRequest()
-    : requestResponse.request();
-
-if (req == null) {
-    return "";
-}
-
-String path = req.pathWithoutQuery();
-if (path == null) {
-    return "";
-}
-
-return path;
+var fullPath = requestResponse.request().path();
+var pathOnly = fullPath.split("\\?")[0];
+return pathOnly;
