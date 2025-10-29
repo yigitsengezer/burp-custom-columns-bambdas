@@ -1,0 +1,11 @@
+var parameters = requestResponse.request().parameters();
+if (parameters.isEmpty()) {
+    return "";
+}
+var names = new StringBuilder();
+for (var param : parameters) {
+    if (param.type().name() != "COOKIE") {
+        names.append(param.name()).append(", ");
+    }
+}
+return names.length() > 0 ? names.substring(0, names.length() - 2) : "";
