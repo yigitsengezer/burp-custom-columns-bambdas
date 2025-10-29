@@ -8,7 +8,16 @@ var reflected = new StringBuilder();
 
 for (var param : requestParams) {
     var value = param.value();
-    var decodedValue = utilities().urlUtils().decode(value);
+    if (value == null || value.trim().isEmpty() || value.equalsIgnoreCase("null")) {
+        continue;
+    }
+
+    var decodedValue = value;
+    try {
+        decodedValue = utilities().urlUtils().decode(value);
+    } catch (Exception e) {
+ 
+    }
 
     if (responseBody.contains(value) || responseBody.contains(decodedValue)) {
         reflected.append(param.name()).append(", ");
