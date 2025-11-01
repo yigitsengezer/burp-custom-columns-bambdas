@@ -1,0 +1,38 @@
+if (!requestResponse.hasResponse()) {
+    return "";
+}
+
+String body = requestResponse.response().bodyToString();
+
+Map<String, String> patterns = Map.ofEntries(
+    Map.entry("document.write", "document\\.write\\(([^)]*)\\)"),
+    Map.entry("window.location", "window\\.location[^\\s;]*"),
+    Map.entry("document.cookie", "document\\.cookie[^\\s;]*"),
+    Map.entry("eval", "eval\\(([^)]*)\\)"),
+    Map.entry("document.domain", "document\\.domain[^\\s;]*"),
+    Map.entry("WebSocket", "WebSocket\\(([^)]*)\\)"),
+    Map.entry("element.src", "\\.src\\s*=\\s*([^;]+)"),
+    Map.entry("postMessage", "postMessage\\(([^)]*)\\)"),
+    Map.entry("setRequestHeader", "setRequestHeader\\(([^)]*)\\)"),
+    Map.entry("FileReader.readAsText", "readAsText\\(([^)]*)\\)"),
+    Map.entry("ExecuteSql", "ExecuteSql\\(([^)]*)\\)"),
+    Map.entry("sessionStorage.setItem", "sessionStorage\\.setItem\\(([^)]*)\\)"),
+    Map.entry("document.evaluate", "document\\.evaluate\\(([^)]*)\\)"),
+    Map.entry("JSON.parse", "JSON\\.parse\\(([^)]*)\\)"),
+    Map.entry("ng-app", "ng-app(\\s*=\\s*['\"]?[^\\s'\">]+['\"]?)"),
+    Map.entry("URLSearchParams", "URLSearchParams\\(([^)]*)\\)"),
+    Map.entry("replace", "replace\\(([^)]*)\\)"),
+    Map.entry("innerHTML", "innerHTML\\s*=\\s*([^;]+)"),
+    Map.entry("location.search", "location\\.search[^\\s;]*"),
+    Map.entry("addEventListener", "addEventListener\\(([^)]*)\\)"),
+    Map.entry("sanitizeKey", "sanitizeKey\\(([^)]*)\\)")
+);
+
+for (var entry : patterns.entrySet()) {
+    var matcher = java.util.regex.Pattern.compile(entry.getValue(), java.util.regex.Pattern.CASE_INSENSITIVE).matcher(body);
+    if (matcher.find()) {
+        return entry.getKey() + "(" + matcher.group(1).trim() + ")";
+    }
+}
+
+return "";
