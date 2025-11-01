@@ -1,0 +1,265 @@
+boolean DEBUG = false;
+
+
+boolean ENCODE_KEY_CHAR_ONLY = true;
+boolean ENCODE_FULL_PAYLOAD = false;
+java.util.List<String> specialChars = new java.util.ArrayList<>();
+specialChars.add("<");
+specialChars.add(">");
+specialChars.add("+");
+specialChars.add("\"");
+specialChars.add("'");
+specialChars.add("{");
+specialChars.add("}");
+specialChars.add(".");
+specialChars.add("(");
+specialChars.add(")");
+specialChars.add("&");
+specialChars.add(";");
+specialChars.add("/");
+specialChars.add(",");
+specialChars.add("[");
+specialChars.add("]");
+specialChars.add("`");
+specialChars.add("\\");
+
+
+var request = requestResponse.request();
+
+for (var parameter : request.parameters()) {
+    if (parameter.type() == HttpParameterType.URL) {
+
+        java.util.List<String> allowedChars = new java.util.ArrayList<>();
+        java.util.List<String> blockedChars = new java.util.ArrayList<>();
+        java.util.Map<String, String> encodedChars = new java.util.HashMap<>();
+
+        String prefix = "zZzPrefixXxX";
+        String suffix = "zZzSuffixYyY";
+
+        try {
+            String markerPayload = prefix + suffix;
+            var markerParam = HttpParameter.urlParameter(parameter.name(), markerPayload);
+            var requestWithoutParam = request.withRemovedParameters(parameter);
+            var requestMarker = requestWithoutParam.withAddedParameters(markerParam);
+            var finalMarkerRequest = requestMarker.withHeader("X-Custom-Action", "Char-Marker-Check");
+            var markerSend = api().http().sendRequest(finalMarkerRequest);
+            var markerResp = markerSend.response();
+
+            boolean markersFound = false;
+            if (markerResp != null) {
+                String rb = markerResp.bodyToString();
+                int pIdx = rb.indexOf(prefix);
+                if (pIdx != -1) {
+                    int sIdx = rb.indexOf(suffix, pIdx + prefix.length());
+                    if (sIdx != -1 && sIdx > pIdx) {
+                        markersFound = true;
+                    }
+                }
+                if (DEBUG) {
+                    logging.logToOutput("[DEBUG-MARKER] param=" + parameter.name() + " prefixIndex=" + rb.indexOf(prefix) +
+                                        " suffixIndexAfterPrefix=" + ( rb.indexOf(prefix) == -1 ? -1 : rb.indexOf(suffix, rb.indexOf(prefix) + prefix.length()) ));
+                }
+            }
+
+            if (!markersFound) {
+                StringBuilder skipLog = new StringBuilder();
+                skipLog.append("============================================================\n");
+                skipLog.append("      [RAW I/O TEST - SKIPPED] for URL Parameter: '").append(parameter.name()).append("'\n");
+                skipLog.append("Markers (prefix+suffix) were NOT reliably reflected by the server. Skipping character checks for this parameter.\n\n");
+                skipLog.append("Final request parameters (after removal/add):\n");
+                for (var p : requestMarker.parameters()) {
+                    skipLog.append("    ").append(p.type()).append(" ").append(p.name()).append(" = '").append(p.value()).append("'\n");
+                }
+                if (markerResp != null) {
+                    String rb = markerResp.bodyToString();
+                    int len = Math.min(600, rb.length());
+                    skipLog.append("\nResponse snippet (first ").append(len).append(" chars):\n");
+                    skipLog.append(rb.substring(0, len)).append("\n");
+                } else {
+                    skipLog.append("\nNo response received for marker check.\n");
+                }
+                skipLog.append("------------------------------------------------------------\n");
+                logging.logToOutput(skipLog.toString());
+                continue;
+            }
+        } catch (Exception ex) {
+            logging.logToOutput("[ERROR] marker check failed for param=" + parameter.name() + " ex=" + ex.toString());
+            continue;
+        }
+
+        for (String specialChar : specialChars) {
+            try {
+                String rawPayload = prefix + specialChar + suffix;
+                String payloadToUse = rawPayload;
+
+                if (ENCODE_FULL_PAYLOAD) {
+                    try {
+                        payloadToUse = java.net.URLEncoder.encode(rawPayload, java.nio.charset.StandardCharsets.UTF_8.name());
+                    } catch (Exception e) {
+                        payloadToUse = rawPayload;
+                    }
+                } else if (ENCODE_KEY_CHAR_ONLY) {
+                    try {
+                        String encodedChar = java.net.URLEncoder.encode(specialChar, java.nio.charset.StandardCharsets.UTF_8.name());
+                        payloadToUse = prefix + encodedChar + suffix;
+                    } catch (Exception e) {
+                        payloadToUse = rawPayload;
+                    }
+                } 
+
+                var newParameter = HttpParameter.urlParameter(parameter.name(), payloadToUse);
+                var requestWithoutParam = request.withRemovedParameters(parameter);
+                var requestWithPayload = requestWithoutParam.withAddedParameters(newParameter);
+                var finalRequest = requestWithPayload.withHeader("X-Custom-Action", "Char-Raw-Test-URL");
+
+                if (DEBUG) {
+                    StringBuilder rp = new StringBuilder();
+                    rp.append("[DEBUG-REQ] param=").append(parameter.name()).append(" sending parameters:\n");
+                    for (var p : requestWithPayload.parameters()) {
+                        rp.append("    ").append(p.type()).append(" ").append(p.name()).append(" = '").append(p.value()).append("'\n");
+                    }
+                    logging.logToOutput(rp.toString());
+                    logging.logToOutput("[DEBUG-REQ] payloadRaw='" + rawPayload + "' payloadToUse='" + payloadToUse + "'");
+                }
+
+                var sendResult = api().http().sendRequest(finalRequest);
+                var response = sendResult.response();
+
+                if (response == null) {
+                    blockedChars.add(specialChar);
+                    continue;
+                }
+
+                String responseBody = response.bodyToString();
+                int prefixIndex = responseBody.indexOf(prefix);
+                if (prefixIndex == -1) {
+                    if (DEBUG) logging.logToOutput("[DEBUG] param=" + parameter.name() + " char=" + specialChar + " => prefix not found");
+                    blockedChars.add(specialChar);
+                    continue;
+                }
+
+                int suffixIndex = responseBody.indexOf(suffix, prefixIndex + prefix.length());
+                if (suffixIndex != -1 && suffixIndex > prefixIndex) {
+                    String reflectedPart = responseBody.substring(prefixIndex + prefix.length(), suffixIndex);
+                    String reflectedTrim = reflectedPart.trim();
+
+                    String unescaped = reflectedTrim
+                            .replace("&lt;", "<")
+                            .replace("&gt;", ">")
+                            .replace("&amp;", "&")
+                            .replace("&quot;", "\"")
+                            .replace("&#39;", "'")
+                            .replace("&#x27;", "'");
+                    String urlDecoded = reflectedTrim;
+                    try {
+                        urlDecoded = java.net.URLDecoder.decode(reflectedTrim, java.nio.charset.StandardCharsets.UTF_8.name());
+                    } catch (Exception e) {
+                    }
+
+                    if (reflectedTrim.equals(specialChar) || unescaped.equals(specialChar) || urlDecoded.equals(specialChar)) {
+                        allowedChars.add(specialChar);
+                    } else if (!reflectedTrim.isEmpty()) {
+                        encodedChars.put(specialChar, reflectedPart);
+                    } else {
+                        blockedChars.add(specialChar);
+                    }
+                    if (DEBUG) logging.logToOutput("[DEBUG] param=" + parameter.name() + " char=" + specialChar + " suffix-found reflectedRaw='" + reflectedPart + "'");
+                    continue;
+                }
+
+                boolean matched = false;
+
+                if (responseBody.indexOf(prefix + specialChar) != -1) {
+                    allowedChars.add(specialChar);
+                    matched = true;
+                    if (DEBUG) logging.logToOutput("[DEBUG-FB] prefix+char raw matched for " + specialChar);
+                }
+                if (matched) continue;
+
+                String htmlEsc = specialChar;
+                if ("<".equals(specialChar)) htmlEsc = "&lt;";
+                else if (">".equals(specialChar)) htmlEsc = "&gt;";
+                else if ("&".equals(specialChar)) htmlEsc = "&amp;";
+                else if ("\"".equals(specialChar)) htmlEsc = "&quot;";
+                else if ("'".equals(specialChar)) htmlEsc = "&#39;";
+
+                if (responseBody.indexOf(prefix + htmlEsc) != -1) {
+                    encodedChars.put(specialChar, htmlEsc);
+                    matched = true;
+                    if (DEBUG) logging.logToOutput("[DEBUG-FB] prefix+htmlEsc matched for " + specialChar + " -> " + htmlEsc);
+                }
+                if (matched) continue;
+
+                String pct = "";
+                try {
+                    pct = java.net.URLEncoder.encode(specialChar, java.nio.charset.StandardCharsets.UTF_8.name());
+                } catch (Exception e) {
+                    pct = "";
+                }
+                if (!pct.isEmpty() && responseBody.indexOf(prefix + pct) != -1) {
+                    encodedChars.put(specialChar, pct);
+                    matched = true;
+                    if (DEBUG) logging.logToOutput("[DEBUG-FB] prefix+pct matched for " + specialChar + " -> " + pct);
+                }
+                if (matched) continue;
+
+                int captureStart = prefixIndex + prefix.length();
+                int captureEnd = Math.min(captureStart + 40, responseBody.length());
+                if (captureStart < responseBody.length()) {
+                    String capture = responseBody.substring(captureStart, captureEnd);
+                    String captureUnescaped = capture
+                            .replace("&lt;", "<")
+                            .replace("&gt;", ">")
+                            .replace("&amp;", "&")
+                            .replace("&quot;", "\"")
+                            .replace("&#39;", "'");
+                    if (capture.indexOf(specialChar) != -1) {
+                        allowedChars.add(specialChar);
+                        matched = true;
+                        if (DEBUG) logging.logToOutput("[DEBUG-FB] found specialChar inside capture for " + specialChar + " capture='" + capture + "'");
+                    } else if (captureUnescaped.indexOf(specialChar) != -1) {
+                        encodedChars.put(specialChar, capture);
+                        matched = true;
+                        if (DEBUG) logging.logToOutput("[DEBUG-FB] found unescaped specialChar inside capture for " + specialChar + " capture='" + capture + "'");
+                    }
+                }
+
+                if (!matched) {
+                    blockedChars.add(specialChar);
+                    if (DEBUG) logging.logToOutput("[DEBUG] param=" + parameter.name() + " char=" + specialChar + " => blocked (no match)");
+                }
+            } catch (Exception ex) {
+                blockedChars.add(specialChar);
+                if (DEBUG) logging.logToOutput("[ERROR] exception testing char=" + specialChar + " ex=" + ex.toString());
+            }
+        }
+
+        StringBuilder logOutput = new StringBuilder();
+        logOutput.append("============================================================\n");
+        logOutput.append("      [RAW I/O TEST] for URL Parameter: '").append(parameter.name()).append("'\n");
+        logOutput.append("============================================================\n\n");
+        logOutput.append("[+] Allowed Characters:\n");
+        if (allowedChars.isEmpty()) { logOutput.append("    (None)\n"); }
+        else {
+            logOutput.append("    ");
+            for (String c : allowedChars) { logOutput.append(c).append("   "); }
+            logOutput.append("\n");
+        }
+        logOutput.append("\n[~] Transformed Characters:\n");
+        if (encodedChars.isEmpty()) { logOutput.append("    (None)\n"); }
+        else {
+            for (java.util.Map.Entry<String, String> entry : encodedChars.entrySet()) {
+                logOutput.append("    '").append(entry.getKey()).append("'  ->  '").append(entry.getValue()).append("'\n");
+            }
+        }
+        logOutput.append("\n[-] Blocked Characters:\n");
+        if (blockedChars.isEmpty()) { logOutput.append("    (None)\n"); }
+        else {
+            logOutput.append("    ");
+            for (String c : blockedChars) { logOutput.append(c).append("   "); }
+            logOutput.append("\n");
+        }
+        logOutput.append("\n------------------------------------------------------------\n");
+        logging.logToOutput(logOutput.toString());
+    }
+}
